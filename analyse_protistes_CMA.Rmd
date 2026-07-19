@@ -1,0 +1,272 @@
+
+
+
+```{r}
+
+```
+
+```{r}
+```{r}
+library(phyloseq)
+library(microbiome)
+library(VennDiagram)
+library(grid)
+
+# =========================
+# 1. Agréger au niveau Genre
+# =========================
+
+Gooddata2_genus <- microbiome::aggregate_taxa(Gooddata2, "Genus")
+
+# =========================
+# 2. Séparer CIROB Racine / Sol
+# =========================
+
+ps_cirob_rac <- subset_samples(
+  Gooddata2_genus,
+  Site == "CIROB" & Compartiment == "Racine"
+)
+
+ps_cirob_sol <- subset_samples(
+  Gooddata2_genus,
+  Site == "CIROB" & Compartiment == "Sol"
+)
+
+# Supprimer les genres absents
+ps_cirob_rac <- prune_taxa(taxa_sums(ps_cirob_rac) > 0, ps_cirob_rac)
+ps_cirob_sol <- prune_taxa(taxa_sums(ps_cirob_sol) > 0, ps_cirob_sol)
+
+# =========================
+# 3. Récupérer les genres présents
+# =========================
+
+genre_cirob_rac <- taxa_names(ps_cirob_rac)
+genre_cirob_sol <- taxa_names(ps_cirob_sol)
+
+# =========================
+# 4. Genres partagés / spécifiques
+# =========================
+
+genres_partages <- intersect(genre_cirob_sol, genre_cirob_rac)
+genres_sol_only <- setdiff(genre_cirob_sol, genre_cirob_rac)
+genres_racine_only <- setdiff(genre_cirob_rac, genre_cirob_sol)
+
+length(genres_partages)
+length(genres_sol_only)
+length(genres_racine_only)
+
+# =========================
+# 5. Diagramme de Venn
+# =========================
+
+venn.plot <- venn.diagram(
+  x = list(
+    Sol = genre_cirob_sol,
+    Racine = genre_cirob_rac
+  ),
+  filename = NULL,
+  fill = c("orange", "steelblue"),
+  alpha = 0.5,
+  cex = 1.5,
+  cat.cex = 1.4,
+  main = "Genres de CMA partagés entre sol et racines - CIROB"
+)
+
+grid.newpage()
+grid.draw(venn.plot)
+```
+
+```{r}
+genres_partages
+genres_sol_only
+genres_racine_only
+```
+
+
+
+```{r}
+ps_cma_sol <- subset_samples(
+  Gooddata2,
+  Compartiment == "Sol")
+```
+
+```{r}
+cma_genus <- tax_glom(
+  ps_cma_sol,
+  taxrank = "Genus",
+  NArm = TRUE
+)
+```
+
+
+```{r}
+library(vegan)
+library(Hmisc)
+library(pheatmap)
+
+     # protistes déjà sols
+ps_prot_sol <- subset_samples(Gooddata2, Site == "CIROB")
+ps_cma_sol  <- cma_genus      # objet CMA déjà au niveau Genre
+
+# ============================
+# 2. Protistes au niveau Genre
+# ============================
+
+prot_genus <- tax_glom(
+  ps_prot_sol,
+  taxrank = "Genus",
+  NArm = TRUE
+)
+
+prot_tab <- as.data.frame(otu_table(prot_genus))
+
+if (taxa_are_rows(prot_genus)) {
+  prot_tab <- t(prot_tab)
+}
+
+prot_tab <- as.data.frame(prot_tab)
+
+# Remplacer les noms ASV par les genres
+tax_prot <- as.data.frame(tax_table(prot_genus))
+colnames(prot_tab) <- tax_prot$Genus
+
+# ============================
+# 3. Table CMA au niveau Genre
+# ============================
+
+cma_tab <- as.data.frame(otu_table(ps_cma_sol))
+
+if (taxa_are_rows(ps_cma_sol)) {
+  cma_tab <- t(cma_tab)
+}
+
+cma_tab <- as.data.frame(cma_tab)
+
+tax_cma <- as.data.frame(tax_table(ps_cma_sol))
+colnames(cma_tab) <- tax_cma$Genus
+
+# ============================
+# 4. Harmoniser les noms d'échantillons
+# ============================
+
+rownames(prot_tab) <- gsub("_", "", rownames(prot_tab))
+rownames(cma_tab)  <- gsub("_", "", rownames(cma_tab))
+
+samples_communs <- intersect(
+  rownames(prot_tab),
+  rownames(cma_tab)
+)
+
+prot_tab <- prot_tab[samples_communs, , drop = FALSE]
+cma_tab  <- cma_tab[samples_communs, , drop = FALSE]
+
+# Remettre dans le même ordre
+cma_tab <- cma_tab[rownames(prot_tab), , drop = FALSE]
+
+identical(rownames(prot_tab), rownames(cma_tab))
+
+# ============================
+# 5. Convertir en numérique
+# ============================
+
+prot_tab[] <- lapply(prot_tab, function(x) as.numeric(as.character(x)))
+cma_tab[]  <- lapply(cma_tab, function(x) as.numeric(as.character(x)))
+
+prot_tab[is.na(prot_tab)] <- 0
+cma_tab[is.na(cma_tab)] <- 0
+
+# ============================
+# 6. Garder les 20 genres de protistes les plus abondants
+# ============================
+
+abondance_prot <- sort(colSums(prot_tab), decreasing = TRUE)
+
+top20_prot <- names(abondance_prot)[1:20]
+
+prot_top20 <- prot_tab[, top20_prot, drop = FALSE]
+
+dim(prot_top20)
+dim(cma_tab)
+
+# ============================
+# 7. Filtrer les CMA trop rares si nécessaire
+# ============================
+
+seuil_cma <- ceiling(0.10 * nrow(cma_tab))
+
+cma_filt <- cma_tab[
+  ,
+  colSums(cma_tab > 0) >= seuil_cma,
+  drop = FALSE
+]
+
+# On garde les 20 protistes tels quels
+prot_filt <- prot_top20
+
+dim(prot_filt)
+dim(cma_filt)
+
+
+# Transformation Hellinger
+prot_hel <- decostand(prot_filt, method = "hellinger")
+cma_hel  <- decostand(cma_filt, method = "hellinger")
+
+# Corrélations + p-values
+mat <- cbind(prot_hel, cma_hel)
+
+corr <- rcorr(
+  as.matrix(mat),
+  type = "spearman"
+)
+
+nprot <- ncol(prot_hel)
+
+# Matrice des corrélations Protistes x CMA
+cor_mat <- corr$r[
+  1:nprot,
+  (nprot + 1):ncol(corr$r)
+]
+
+# Matrice des p-values
+p_mat <- corr$P[
+  1:nprot,
+  (nprot + 1):ncol(corr$P)
+]
+
+# Ajouter un "+" si p < 0.05
+sig <- matrix(
+  "",
+  nrow = nrow(p_mat),
+  ncol = ncol(p_mat)
+)
+
+sig[p_mat < 0.05] <- "+"
+
+rownames(sig) <- rownames(cor_mat)
+colnames(sig) <- colnames(cor_mat)
+
+# Heatmap finale
+G <- pheatmap(
+  cor_mat,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  display_numbers = sig,
+  number_color = "black",
+  fontsize_number = 12,
+  fontsize_row = 8,
+  fontsize_col = 9,
+  angle_col = 45,
+  border_color = "grey90",
+  main = "Cooccurrence entre les 20 genres dominants de protistes et les CMA"
+)
+```
+
+
+```{r}
+ggsave( filename = "heat.png", plot = G, width = 8, height = 5, units = "in", dpi = 300,  )
+```
+
+
+
+
+
