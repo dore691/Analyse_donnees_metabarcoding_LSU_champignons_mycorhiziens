@@ -1,11 +1,40 @@
 
+#Analyse des données de métabarcoding LSU 28S (champignons mycorhiziens à arbuuscules:CMA),diagramme de venn, co-occurence champignons protistes
 
+les analyses de données des CMA a été fait avec le meme pipeline que les protistes.
+donc, la première partie (abondance relative, diversité alpha, diversité béta, co-occurence entre CMA), se referer au pipeline sur les protistes.
 
+la première partie de ce script est reservé au spécificité de l'analyse des champignons, la seconde au diagramme de venn et la dernière aux co-occurence champignons protistes.
+
+#première partie
+
+##importation de la table d'ASV et de la table taxonomique
 ```{r}
-
+ASVariant<-read.csv("/Users/dores/OneDrive/Desktop/Memoire M2/Analyse_de_données_stage_M2/data/sequence_table_LSU.csv",sep=";")
+Taxonomy<-read.csv("/Users/dores/OneDrive/Desktop/Memoire M2/Analyse_de_données_stage_M2/data/taxonomy_table_LSU.csv",sep=";")
 ```
 
+Après l'assignation taxotomique des champignons, on retrouve d'autres types de champignons comme les ascomycètes et les basidiomycètes. afin de travailler qu'avec les CMA majoritèrement constitué de gloméromycètes, on va appliquer un filtre directement sur la table d'assignation taxonomique et importer cette table pour la suite des analyses.
+
 ```{r}
+tax_glomero<-filter(Taxonomy, Phylum == "Glomeromycota")
+```
+
+##Définition du dossier de travail
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "c:/Users/dores/OneDrive/Desktop/Memoire M2/Analyse_de_données_stage_M2/data/LSU")
+
+getwd()
+```
+
+#Deuxième partie
+##Diagramme de venn(ici on travaille avec les données de gloméromycètes)
+Le diagramme de venn permet de voir quel sont les genres de gloméromycètes présents dans le milieu intra et extraracinaire et  voir ceux communs entre les deux milieux en fonction des sites.
+on avait 5 modèles: Prunella_CIROB,_JEMU; Geranium_CIROB,_JEMU,_MUENT
+
+## import des packages et script complet pour venn
 ```{r}
 library(phyloseq)
 library(microbiome)
@@ -76,20 +105,23 @@ grid.newpage()
 grid.draw(venn.plot)
 ```
 
+##genres spécifiques au sol, au racine et communs aux deux
 ```{r}
 genres_partages
 genres_sol_only
 genres_racine_only
 ```
 
-
-
+#Troisième partie
+##co-occurence CMA protistes
+###sélection des gloméromycètes du sol
 ```{r}
 ps_cma_sol <- subset_samples(
   Gooddata2,
   Compartiment == "Sol")
 ```
 
+pour ces ASV, voir les assignations au niveau du genre
 ```{r}
 cma_genus <- tax_glom(
   ps_cma_sol,
@@ -98,7 +130,7 @@ cma_genus <- tax_glom(
 )
 ```
 
-
+## Installation des packages et script complet pour la heatmap de co-occurence (le faire pour tout les sites)
 ```{r}
 library(vegan)
 library(Hmisc)
@@ -261,7 +293,7 @@ G <- pheatmap(
 )
 ```
 
-
+##export du diagramme
 ```{r}
 ggsave( filename = "heat.png", plot = G, width = 8, height = 5, units = "in", dpi = 300,  )
 ```
